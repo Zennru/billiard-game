@@ -31,11 +31,11 @@ font = pygame.font.SysFont("Lato", 30)
 large_font = pygame.font.SysFont("Lato", 60)
 
 # load images
-cue_image = pygame.image.load("assets/images/cue.png").convert_alpha()
-table_image = pygame.image.load("assets/images/table.png").convert_alpha()
+cue_image = pygame.image.load("assets/images/cue/japan_cue.png").convert_alpha()
+table_image = pygame.image.load("assets/images/table/japan_table.png").convert_alpha()
 table_image = pygame.transform.scale(table_image, (SCREEN_WIDTH, SCREEN_HEIGHT))
 
-ball_images = [pygame.image.load(f"assets/images/ball_{i}.png").convert_alpha()
+ball_images = [pygame.image.load(f"assets/images/ball/ball_{i}.png").convert_alpha()
                for i in range(1, 17)]
 
 # systems
