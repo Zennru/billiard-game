@@ -1,5 +1,3 @@
-import pygame
-
 class UIHandler:
     def __init__(self, font, large_font):
         self.font = font
@@ -10,5 +8,6 @@ class UIHandler:
         screen.blit(img, (x, y))
 
     def draw_potted(self, screen, images):
+        base_x = 10
         for i, img in enumerate(images):
-            screen.blit(img, (10 + i * 50, screen.get_height() - 40))
+            screen.blit(img, (base_x + i*34, screen.get_height() - 42))

@@ -1,7 +1,7 @@
 import math
 
 class Pocket:
-    def __init__(self, screen_w, screen_h, diameter=66):
+    def __init__(self, screen_w, screen_h, diameter=80):
         self.radius = diameter / 2
 
         self.pockets = [
@@ -15,5 +15,6 @@ class Pocket:
 
     def check(self, ball_pos):
         return any(
-            math.dist(ball_pos, pocket) <= self.radius for pocket in self.pockets
+            math.dist(ball_pos, pocket) <= self.radius
+            for pocket in self.pockets
         )
