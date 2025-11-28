@@ -2,25 +2,29 @@ import pymunk
 
 class Table:
     def __init__(self, space, w, h):
-        self.space = space   # ← ini yang kamu lupa
+        self.space = space
 
-        gap = 60  # bukaan untuk pocket
+        wall_thickness = 10
+        pocket_radius = 45  # besar lubang 90px di pocket.py
 
-        # ==== TOP ====
-        self.create_edge(80 + gap, 50, w/2 - gap, 50)
-        self.create_edge(w/2 + gap, 50, w - 80 - gap, 50)
+        center_x = w / 2
+        gap_half = pocket_radius + 5
 
-        # ==== BOTTOM ====
-        self.create_edge(80 + gap, h - 50, w/2 - gap, h - 50)
-        self.create_edge(w/2 + gap, h - 50, w - 80 - gap, h - 50)
+        corner_limit = 80
 
-        # ==== LEFT ====
-        self.create_edge(50, 80 + gap, 50, h/2 - gap)
-        self.create_edge(50, h/2 + gap, 50, h - 80 - gap)
-
-        # ==== RIGHT ====
-        self.create_edge(w - 50, 80 + gap, w - 50, h/2 - gap)
-        self.create_edge(w - 50, h/2 + gap, w - 50, h - 80 - gap)
+        # Kiri Atas
+        self.create_edge(corner_limit, 50, center_x - gap_half, 50)
+        # Kanan Atas
+        self.create_edge(center_x + gap_half, 50, w - corner_limit, 50)
+        
+        # Kiri Bawah
+        self.create_edge(corner_limit, h - 50, center_x - gap_half, h - 50)
+        # Kanan Bawah
+        self.create_edge(center_x + gap_half, h - 50, w - corner_limit, h - 50) 
+        
+        # ==== BATAS SISI KIRI/KANAN (TIDAK ADA PERUBAHAN) ====
+        self.create_edge(50, corner_limit, 50, h - corner_limit) # left
+        self.create_edge(w - 50, corner_limit, w - 50, h - corner_limit) # right
 
     def create_edge(self, x1, y1, x2, y2):
         body = pymunk.Body(body_type=pymunk.Body.STATIC)

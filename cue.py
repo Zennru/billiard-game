@@ -7,27 +7,38 @@ class Cue:
         self.image = image
         self.angle = 0
         self.ball = ball
-        self.rect = self.image.get_rect(center=ball.body.position)
+        self.cue_pos = ball.body.position
 
     def update(self, mouse_pos):
         bx, by = self.ball.body.position
-        dx = bx - mouse_pos[0]
-        dy = -(by - mouse_pos[1])
+        mx, my = mouse_pos
 
-        self.angle = math.degrees(math.atan2(dy, dx))
-        self.rect.center = (bx, by)
+        dx = mx - bx
+        dy = my - by
+
+        # angle rotasi stick
+        self.angle = -math.degrees(math.atan2(dy, dx))
+
+        # jarak mundur stick dari bola
+        stick_offset = 120  
+        angle_rad = math.radians(-self.angle)
+
+        offset_x = math.cos(angle_rad) * -stick_offset
+        offset_y = math.sin(angle_rad) * -stick_offset
+
+        self.cue_pos = (bx + offset_x, by + offset_y)
 
     def draw(self, screen):
         rotated = pygame.transform.rotate(self.original_image, self.angle)
-        rect = rotated.get_rect(center=self.rect.center)
-        screen.blit(rotated, rect)
+        self.image = rotated
+        rect = self.image.get_rect(center=self.cue_pos)
+        screen.blit(self.image, rect)
 
-    def shoot(self, force, angle):
-        # arah harus sama dengan aim line
-        rad = math.radians(angle)
-        x_impulse = math.cos(rad)
-        y_impulse = math.sin(rad)
+    def shoot(self, force):
+        # gunakan angle cue aktual
+        angle_rad = math.radians(-self.angle)
 
-        self.ball.body.apply_impulse_at_local_point(
-            (force * -x_impulse, force * y_impulse)
-        )
+        x_impulse = force * math.cos(angle_rad)
+        y_impulse = force * math.sin(angle_rad)
+
+        self.ball.body.apply_impulse_at_world_point((x_impulse, y_impulse), self.ball.body.position)
