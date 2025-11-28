@@ -1,7 +1,8 @@
 import math
 
 class Pocket:
-    def __init__(self, screen_w, screen_h, diameter=80):
+    def __init__(self, screen_w, screen_h, diameter=90):
+        # diameter dibesarkan supaya bola lebih gampang "masuk"
         self.radius = diameter / 2
 
         self.pockets = [

@@ -2,25 +2,28 @@ import pymunk
 
 class Table:
     def __init__(self, space, w, h):
-        self.space = space   # ← ini yang kamu lupa
+        self.space = space
 
-        gap = 60  # bukaan untuk pocket
+        wall_thickness = 10
+        pocket_radius = 45  # besar lubang 90px di pocket.py
 
-        # ==== TOP ====
-        self.create_edge(80 + gap, 50, w/2 - gap, 50)
-        self.create_edge(w/2 + gap, 50, w - 80 - gap, 50)
+        # MAIN WALLS (tanpa melewati pocket)
+        self.create_edge(80, 50, w - 80, 50)        # top
+        self.create_edge(80, h - 50, w - 80, h - 50)  # bottom
+        self.create_edge(50, 80, 50, h - 80)        # left
+        self.create_edge(w - 50, 80, w - 50, h - 80)  # right
 
-        # ==== BOTTOM ====
-        self.create_edge(80 + gap, h - 50, w/2 - gap, h - 50)
-        self.create_edge(w/2 + gap, h - 50, w - 80 - gap, h - 50)
+        # ======== CORNER BLOCKERS ========
+        # agar bola TIDAK bisa keluar map lewat pojok pocket
 
-        # ==== LEFT ====
-        self.create_edge(50, 80 + gap, 50, h/2 - gap)
-        self.create_edge(50, h/2 + gap, 50, h - 80 - gap)
-
-        # ==== RIGHT ====
-        self.create_edge(w - 50, 80 + gap, w - 50, h/2 - gap)
-        self.create_edge(w - 50, h/2 + gap, w - 50, h - 80 - gap)
+        # top left
+        self.create_edge(80, 50, 50, 80)
+        # top right
+        self.create_edge(w - 80, 50, w - 50, 80)
+        # bottom left
+        self.create_edge(80, h - 50, 50, h - 80)
+        # bottom right
+        self.create_edge(w - 80, h - 50, w - 50, h - 80)
 
     def create_edge(self, x1, y1, x2, y2):
         body = pymunk.Body(body_type=pymunk.Body.STATIC)
