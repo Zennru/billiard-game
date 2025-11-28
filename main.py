@@ -112,6 +112,36 @@ while run:
 
         mouse = pygame.mouse.get_pos()
         cue.update(mouse)
+        # ===== AIM LINE =====
+        bx, by = cue_ball.body.position
+        angle_rad = math.radians(cue.angle)
+
+        # arah harus sama seperti shoot()
+        dir_x = -math.cos(angle_rad)
+        dir_y = math.sin(angle_rad)
+
+        # garis utama
+        pygame.draw.line(
+            screen,
+            (255,255,255),
+            (bx,by),
+            (bx + dir_x * 500, by + dir_y * 500),
+            3
+        )
+
+        # ghost ball
+        ghost = (bx + dir_x * (cue_ball.radius*3),
+                by + dir_y * (cue_ball.radius*3))
+        pygame.draw.circle(screen, (255,255,255), (int(ghost[0]), int(ghost[1])), int(cue_ball.radius), 1)
+
+        # garis pendek kedua
+        pygame.draw.line(
+            screen,
+            (200,200,200),
+            ghost,
+            (ghost[0] + dir_x * 120, ghost[1] + dir_y * 120),
+            2
+        )
         cue.draw(screen)
 
     # power bar charge

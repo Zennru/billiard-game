@@ -10,10 +10,12 @@ class Cue:
         self.rect = self.image.get_rect(center=ball.body.position)
 
     def update(self, mouse_pos):
-        dx = self.ball.body.position.x - mouse_pos[0]
-        dy = -(self.ball.body.position.y - mouse_pos[1])
+        bx, by = self.ball.body.position
+        dx = bx - mouse_pos[0]
+        dy = -(by - mouse_pos[1])
+
         self.angle = math.degrees(math.atan2(dy, dx))
-        self.rect.center = self.ball.body.position
+        self.rect.center = (bx, by)
 
     def draw(self, screen):
         rotated = pygame.transform.rotate(self.original_image, self.angle)
@@ -21,8 +23,10 @@ class Cue:
         screen.blit(rotated, rect)
 
     def shoot(self, force, angle):
-        x_impulse = math.cos(math.radians(angle))
-        y_impulse = math.sin(math.radians(angle))
+        # arah harus sama dengan aim line
+        rad = math.radians(angle)
+        x_impulse = math.cos(rad)
+        y_impulse = math.sin(rad)
 
         self.ball.body.apply_impulse_at_local_point(
             (force * -x_impulse, force * y_impulse)
