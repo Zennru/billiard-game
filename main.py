@@ -24,7 +24,7 @@ FPS = 120
 # pymunk physics
 space = pymunk.Space()
 space.gravity = (0, 0)
-space.damping = 0.95
+space.damping = 0.90
 
 # fonts
 font = pygame.font.SysFont("Lato", 30)

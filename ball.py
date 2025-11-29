@@ -9,13 +9,15 @@ class Ball:
         self.body = pymunk.Body(mass, moment)
         self.body.position = pos
 
-        # bikin bola agak berat supaya nggak licin
-        self.body.linear_damping = 0.99   # makin besar → makin cepat melambat
+        # bikin bola tidak licin
+        self.body.linear_damping = 1.25
         self.body.angular_damping = 0.9
 
         self.shape = pymunk.Circle(self.body, radius)
         self.shape.elasticity = elasticity
-        self.shape.friction = 0.6      # gesekan cukup besar
+
+        # friksi supaya tidak selicin es
+        self.shape.friction = 1.55
         self.shape.collision_type = 1
 
         space.add(self.body, self.shape)
@@ -25,12 +27,12 @@ class Ball:
         y = int(self.body.position.y - self.radius)
         screen.blit(image, (x, y))
 
+    # bola berhenti lebih cepat
     def is_stopped(self):
         vx, vy = self.body.velocity
-        speed_sq = vx * vx + vy * vy
+        speed_sq = vx*vx + vy*vy
 
-        # kalau sudah pelan banget, paksa berhenti
-        if speed_sq < 200:   # threshold agresif, biar cepat berhenti
+        if speed_sq < 650:     # threshold agresif = berhenti cepat
             self.body.velocity = (0, 0)
             return True
         return False
