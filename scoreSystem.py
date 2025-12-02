@@ -1,19 +1,14 @@
 import pygame
 
+
 class ScoreSystem:
-    def __init__(self, lives=3):
-        self.lives = lives
-        self.potted_balls = []
-        self.score = 0
+    def __init__(self):
+        self.potted_p1 = []
+        self.potted_p2 = []
 
-    def lose_life(self):
-        self.lives -= 1
-
-    def add_potted(self, img, points=10):
-        # kecilkan gambar bola untuk bar bawah
-        icon = pygame.transform.smoothscale(img, (26, 26))
-        self.potted_balls.append(icon)
-        self.score += points
-
-    def is_dead(self):
-        return self.lives <= 0
+    def add_potted(self, img, player):
+        icon = pygame.transform.smoothscale(img, (24, 24))
+        if player == 1:
+            self.potted_p1.append(icon)
+        else:
+            self.potted_p2.append(icon)

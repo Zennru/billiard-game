@@ -1,6 +1,7 @@
+import math
+import random
 import pygame
 import pymunk
-import math
 
 from ball import Ball
 from cue import Cue
@@ -11,364 +12,725 @@ from scoreSystem import ScoreSystem
 
 pygame.init()
 
+# ===== SCREEN =====
 SCREEN_WIDTH = 1100
 SCREEN_HEIGHT = 600
 BOTTOM_PANEL = 50
-
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT + BOTTOM_PANEL))
 pygame.display.set_caption("Pool Game")
 
 clock = pygame.time.Clock()
 FPS = 120
 
-# pymunk physics
+# ===== PHYSICS =====
 space = pymunk.Space()
 space.gravity = (0, 0)
 space.damping = 0.90
 
-# fonts
-font = pygame.font.SysFont("Lato", 30)
-large_font = pygame.font.SysFont("Lato", 60)
+# ===== FONTS =====
+font = pygame.font.SysFont("Lato", 28)
+large_font = pygame.font.SysFont("Lato", 70)
+button_font = pygame.font.SysFont("Lato", 42)
 
-# ==== ukuran bola (diperkecil dari 36 ke 28) ====
-dia = 40
+# ===== BALL SIZE =====
+dia = 28
 radius = dia / 2
 
-# load images
-cue_image = pygame.image.load("assets/images/cue/winter_cue.png").convert_alpha()
-table_image = pygame.image.load("assets/images/table/winter_table.png").convert_alpha()
+# ===== MENU BACKGROUND =====
+menu_bg = pygame.image.load("assets/images/ball/billiards_Bg.png").convert()
+menu_bg = pygame.transform.scale(menu_bg, (SCREEN_WIDTH, SCREEN_HEIGHT))
+
+# ===== SKINS =====
+cue_skins = ["normal_cue.png", "japan_cue.png", "winter_cue.png"]
+table_skins = ["normal_table.png", "japan_table.png", "winter_table.png"]
+
+selected_cue_p1 = "normal_cue.png"
+selected_cue_p2 = "japan_cue.png"
+selected_table = "normal_table.png"
+
+# ===== GAME BACKGROUND =====
+table_image = pygame.image.load(
+    f"assets/images/table/{selected_table}"
+).convert_alpha()
 table_image = pygame.transform.scale(table_image, (SCREEN_WIDTH, SCREEN_HEIGHT))
 
+# ===== SOUND =====
+hit_sound = pygame.mixer.Sound("assets/sounds/hit.wav")
+hit_sound.set_volume(0.8)
+
+collision_sound = pygame.mixer.Sound("assets/sounds/hit.wav")
+collision_sound.set_volume(0.35)
+
+# ===== PREVIEWS =====
+cue_previews = {}
+for name in cue_skins:
+    img = pygame.image.load(f"assets/images/cue/{name}").convert_alpha()
+    cue_previews[name] = pygame.transform.smoothscale(img, (240, 20))
+
+table_previews = {}
+for name in table_skins:
+    img = pygame.image.load(f"assets/images/table/{name}").convert_alpha()
+    table_previews[name] = pygame.transform.smoothscale(img, (260, 140))
+
+# ===== BALL IMAGES =====
 ball_images = [
     pygame.image.load(f"assets/images/ball/ball_{i}.png").convert_alpha()
     for i in range(1, 17)
 ]
-# scale gambar bola ke size baru
-ball_images = [
-    pygame.transform.smoothscale(img, (dia, dia)) for img in ball_images
-]
+ball_images = [pygame.transform.smoothscale(img, (dia, dia)) for img in ball_images]
 
-# systems
-score = ScoreSystem(lives=3)
+shadow_img = pygame.image.load("assets/images/ball/ball_Shadow.png").convert_alpha()
+shadow_img = pygame.transform.smoothscale(shadow_img, (dia, dia))
+
+highlight_img = pygame.image.load("assets/images/ball/ball_HighLight.png").convert_alpha()
+highlight_img = pygame.transform.smoothscale(highlight_img, (dia, dia))
+
+# ===== SYSTEMS =====
+score = ScoreSystem()
 ui = UIHandler(font, large_font)
 
-# create table
 table = Table(space, SCREEN_WIDTH, SCREEN_HEIGHT)
-
-# pockets
 pocket_system = Pocket(SCREEN_WIDTH, SCREEN_HEIGHT)
 
-# create balls
 balls = []
 
+# ===== RACK SETUP =====
 rows = 5
 start_x = SCREEN_WIDTH * 0.25
 start_y = SCREEN_HEIGHT * 0.40
 
 for col in range(5):
-    for row in range(rows):
+    for r in range(rows):
         pos = (
             start_x + col * (dia + 1),
-            start_y + row * (dia + 1) + col * dia / 2
+            start_y + r * (dia + 1) + col * dia / 2
         )
-        ball = Ball(space, radius, pos)
-        balls.append(ball)
+        balls.append(Ball(space, radius, pos))
     rows -= 1
 
+# ===== CUE BALL =====
 cue_ball_start = (SCREEN_WIDTH * 0.75, SCREEN_HEIGHT / 2)
 cue_ball = Ball(space, radius, cue_ball_start)
 balls.append(cue_ball)
 
+# ===== INITIAL CUE =====
+cue_image = pygame.image.load(
+    f"assets/images/cue/{selected_cue_p1}"
+).convert_alpha()
 cue = Cue(cue_image, cue_ball)
 
-# power variables
+# ===== PLAYER STATE =====
+current_player = 1
+player_score = {1: 0, 2: 0}
+player_lives = {1: 3, 2: 3}
+
 powering_up = False
 force = 0
 max_force = 10000
 force_direction = 1
+ball_in_hand = False
+
 taking_shot = True
+prev_taking_shot = True
 
-run = True
-game_running = True
+pocket_effects = []
 
-# helper: nilai poin tiap bola (index sama kayak ball_images)
-def get_ball_points(index):
-    num = index + 1   # ball_1.png → 1
+STATE_MENU = 0
+STATE_SETTINGS = 1
+STATE_GAME = 2
+state = STATE_MENU
+
+# deteksi tabrakan manual
+last_vel = {b: (0, 0) for b in balls}
+
+# game over + animasi
+game_over = False
+winner = None
+confetti = []
+
+
+def get_ball_points(index: int) -> int:
+    num = index + 1
     if num == 8:
         return 40
-    elif 1 <= num <= 7:
+    elif num <= 7:
         return 20
     else:
         return 25
 
+
+def draw_modern_button(rect, text, hover):
+    # shadow
+    pygame.draw.rect(screen, (0, 0, 0, 150), rect.move(3, 3), border_radius=18)
+
+    # gradient fill
+    base = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+    top_color = (230, 230, 230) if hover else (200, 200, 200)
+    bottom_color = (130, 130, 130) if hover else (100, 100, 100)
+
+    for y in range(rect.height):
+        ratio = y / rect.height
+        r = top_color[0] * (1 - ratio) + bottom_color[0] * ratio
+        g = top_color[1] * (1 - ratio) + bottom_color[1] * ratio
+        b = top_color[2] * (1 - ratio) + bottom_color[2] * ratio
+        pygame.draw.line(base, (int(r), int(g), int(b)), (0, y), (rect.width, y))
+
+    screen.blit(base, rect)
+    pygame.draw.rect(screen, (255, 255, 255), rect, 2, border_radius=18)
+
+    txt_img = button_font.render(text, True, (0, 0, 0))
+    screen.blit(
+        txt_img,
+        (rect.x + rect.width // 2 - txt_img.get_width() // 2,
+         rect.y + rect.height // 2 - txt_img.get_height() // 2)
+    )
+
+
+def spawn_confetti():
+    for _ in range(80):
+        confetti.append({
+            "x": random.randint(0, SCREEN_WIDTH),
+            "y": random.randint(-300, -10),
+            "speed": random.uniform(2, 5),
+            "color": (
+                random.randint(150, 255),
+                random.randint(150, 255),
+                random.randint(150, 255)
+            ),
+            "size": random.randint(3, 6)
+        })
+
+
+def draw_confetti(screen):
+    for c in confetti:
+        c["y"] += c["speed"]
+        pygame.draw.rect(screen, c["color"], (c["x"], c["y"], c["size"], c["size"]))
+    confetti[:] = [c for c in confetti if c["y"] < SCREEN_HEIGHT + 20]
+
+
+# ============================ MAIN LOOP ==============================
+run = True
 while run:
     clock.tick(FPS)
-    space.step(1 / FPS)
 
-    # gambar meja
+    # ===================== MAIN MENU =====================
+    if state == STATE_MENU:
+        screen.blit(menu_bg, (0, 0))
+
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 150))
+        screen.blit(overlay, (0, 0))
+
+        title = large_font.render("POOL GAME", True, (255, 255, 255))
+        screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 80))
+
+        play_rect = pygame.Rect(SCREEN_WIDTH // 2 - 200, 240, 400, 70)
+        set_rect = pygame.Rect(SCREEN_WIDTH // 2 - 200, 330, 400, 70)
+        quit_rect = pygame.Rect(SCREEN_WIDTH // 2 - 200, 420, 400, 70)
+
+        mx, my = pygame.mouse.get_pos()
+
+        draw_modern_button(play_rect, "PLAY", play_rect.collidepoint(mx, my))
+        draw_modern_button(set_rect, "SETTINGS", set_rect.collidepoint(mx, my))
+        draw_modern_button(quit_rect, "QUIT", quit_rect.collidepoint(mx, my))
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                run = False
+
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if play_rect.collidepoint(mx, my):
+                    table_image = pygame.image.load(
+                        f"assets/images/table/{selected_table}"
+                    ).convert_alpha()
+                    table_image = pygame.transform.scale(
+                        table_image, (SCREEN_WIDTH, SCREEN_HEIGHT)
+                    )
+
+                    cue_image = pygame.image.load(
+                        f"assets/images/cue/{selected_cue_p1}"
+                    ).convert_alpha()
+                    cue = Cue(cue_image, cue_ball)
+                    current_player = 1
+                    state = STATE_GAME
+
+                elif set_rect.collidepoint(mx, my):
+                    state = STATE_SETTINGS
+
+                elif quit_rect.collidepoint(mx, my):
+                    run = False
+
+        pygame.display.update()
+        continue
+
+    # ===================== SETTINGS =====================
+    if state == STATE_SETTINGS:
+        screen.blit(menu_bg, (0, 0))
+        dark = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        dark.fill((0, 0, 0, 160))
+        screen.blit(dark, (0, 0))
+
+        title = large_font.render("SETTINGS", True, (255, 255, 255))
+        screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 40))
+
+        screen.blit(button_font.render("Player 1 Cue", True, (255, 255, 255)), (100, 170))
+        screen.blit(button_font.render("Player 2 Cue", True, (255, 255, 255)), (100, 280))
+        screen.blit(button_font.render("Table Skin", True, (255, 255, 255)), (100, 390))
+
+        screen.blit(cue_previews[selected_cue_p1], (100, 210))
+        screen.blit(cue_previews[selected_cue_p2], (100, 320))
+        screen.blit(table_previews[selected_table], (400, 360))
+
+        back_rect = pygame.Rect(40, 530, 180, 55)
+        mx, my = pygame.mouse.get_pos()
+        draw_modern_button(back_rect, "< BACK", back_rect.collidepoint(mx, my))
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                run = False
+
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                mx, my = event.pos
+
+                if 170 <= my <= 260:
+                    idx = cue_skins.index(selected_cue_p1)
+                    selected_cue_p1 = cue_skins[(idx + 1) % len(cue_skins)]
+
+                elif 280 <= my <= 360:
+                    idx = cue_skins.index(selected_cue_p2)
+                    selected_cue_p2 = cue_skins[(idx + 1) % len(cue_skins)]
+
+                elif 390 <= my <= 500:
+                    idx = table_skins.index(selected_table)
+                    selected_table = table_skins[(idx + 1) % len(table_skins)]
+
+                elif back_rect.collidepoint(mx, my):
+                    state = STATE_MENU
+
+        pygame.display.update()
+        continue
+
+    # ===================== GAME STATE =====================
+    space.step(1 / FPS)
     screen.blit(table_image, (0, 0))
 
-    potted_balls_info = []
+    # --------- GAME OVER MODE (ANIMASI) ----------
+    if game_over:
+        if not confetti:
+            spawn_confetti()
 
-    # ==== check pocket events ====
-    for i, ball in enumerate(balls[:]): 
-        if pocket_system.check(ball.body.position):
-            
-            try:
-                current_index = balls.index(ball) 
-            except ValueError:
+        # gelapkan
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        screen.blit(overlay, (0, 0))
+
+        # teks utama dengan glow + zoom
+        base_text = large_font.render(f"PLAYER {winner} WINS!", True, (255, 255, 0))
+        glow_text = large_font.render(f"PLAYER {winner} WINS!", True, (255, 255, 255))
+
+        screen.blit(
+            glow_text,
+            (SCREEN_WIDTH // 2 - glow_text.get_width() // 2,
+             SCREEN_HEIGHT // 2 - 90)
+        )
+
+        zoom = 1.0 + math.sin(pygame.time.get_ticks() * 0.004) * 0.05
+        scaled = pygame.transform.smoothscale(
+            base_text,
+            (int(base_text.get_width() * zoom), int(base_text.get_height() * zoom))
+        )
+        screen.blit(
+            scaled,
+            (SCREEN_WIDTH // 2 - scaled.get_width() // 2,
+             SCREEN_HEIGHT // 2 - 90)
+        )
+
+        # confetti
+        draw_confetti(screen)
+
+        # restart info (fade)
+        alpha = min(255, int((pygame.time.get_ticks() * 0.25) % 255))
+        restart_text = font.render("Press R to Restart", True, (255, 255, 255))
+        restart_surface = pygame.Surface(restart_text.get_size(), pygame.SRCALPHA)
+        restart_surface.blit(restart_text, (0, 0))
+        restart_surface.set_alpha(alpha)
+
+        screen.blit(
+            restart_surface,
+            (SCREEN_WIDTH // 2 - restart_text.get_width() // 2,
+             SCREEN_HEIGHT // 2 + 10)
+        )
+
+        pygame.display.update()
+
+        # event khusus saat game over
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                run = False
+
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+                # RESET GAME
+                current_player = 1
+                player_score[1] = player_score[2] = 0
+                player_lives[1] = player_lives[2] = 3
+
+                score.potted_p1.clear()
+                score.potted_p2.clear()
+
+                for b in balls:
+                    space.remove(b.body, b.shape)
+                balls.clear()
+
+                # build rack lagi
+                rows = 5
+                start_x = SCREEN_WIDTH * 0.25
+                start_y = SCREEN_HEIGHT * 0.40
+                for col in range(5):
+                    for r in range(rows):
+                        pos = (
+                            start_x + col * (dia + 1),
+                            start_y + r * (dia + 1) + col * dia / 2
+                        )
+                        balls.append(Ball(space, radius, pos))
+                    rows -= 1
+
+                # cue ball
+                cue_ball = Ball(space, radius, cue_ball_start)
+                balls.append(cue_ball)
+
+                cue_image = pygame.image.load(
+                    f"assets/images/cue/{selected_cue_p1}"
+                ).convert_alpha()
+                cue = Cue(cue_image, cue_ball)
+
+                ball_in_hand = False
+                game_over = False
+                winner = None
+                confetti.clear()
+                last_vel = {b: (0, 0) for b in balls}
+
+        continue  # skip normal game logic ketika game over
+
+    # ================== NORMAL GAME LOGIC ==================
+    potted_info = []
+
+    # POCKET CHECK
+    for ball in balls[:]:
+        pos = ball.body.position
+        if pocket_system.check(pos):
+            if ball is cue_ball:
+                if not ball_in_hand:
+                    player_lives[current_player] -= 1
+                    ball_in_hand = True
+                ball.body.velocity = (0, 0)
+                ball.body.position = (-200, -200)
                 continue
 
-            if ball is cue_ball:
-                score.lose_life()
-                ball.body.position = (-100, -100)
-                ball.body.velocity = (0, 0)
-            else:
-                points = get_ball_points(current_index)
-                image = ball_images[current_index]
-                potted_balls_info.append({
-                    'ball': ball,
-                    'index': current_index,
-                    'image': image,
-                    'points': points
-                })
+            idx = balls.index(ball)
+            pts = get_ball_points(idx)
+            img = ball_images[idx]
 
-                ball.body.position = (-100, -100)
-                ball.body.velocity = (0, 0)
+            potted_info.append({
+                "ball": ball,
+                "index": idx,
+                "image": img,
+                "pos": pos,
+                "points": pts
+            })
 
-    for info in sorted(potted_balls_info, key=lambda x: x['index'], reverse=True):
-        ball = info['ball']
-        index = info['index']
-        
-        # 1. Update Score System
-        score.add_potted(info['image'], points=info['points'])
+            ball.body.velocity = (0, 0)
+            ball.body.position = (-200, -200)
 
-        # 2. Hapus dari PyMunk Space
-        space.remove(ball.body, ball.shape)
+    # PROCESS POTTED BALLS
+    for info in sorted(potted_info, key=lambda x: x["index"], reverse=True):
+        b = info["ball"]
+        idx = info["index"]
 
-        # 3. Hapus dari List Game (Menggunakan indeks yang sudah dipastikan aman)
-        balls.pop(index)
-        ball_images.pop(index)
+        score.add_potted(info["image"], current_player)
+        player_score[current_player] += info["points"]
 
-    # draw balls
+        if b in last_vel:
+            del last_vel[b]
+        space.remove(b.body, b.shape)
+        balls.pop(idx)
+        ball_images.pop(idx)
+        pocket_effects.append({"pos": info["pos"], "timer": 0})
+
+    # COLLISION SOUND
+    seen_pairs = set()
+
+    # ball-wall
+    for b in balls:
+        vx, vy = b.body.velocity
+        pvx, pvy = last_vel.get(b, (0, 0))
+        x, y = b.body.position
+        speed = math.hypot(vx, vy)
+
+        left = 50 + radius
+        right = SCREEN_WIDTH - 50 - radius
+        top = 50 + radius
+        bottom = SCREEN_HEIGHT - 50 - radius
+
+        if abs(vx) > 20 and vx * pvx < 0 and (x <= left + 1 or x >= right - 1):
+            if speed > 80:
+                collision_sound.play()
+
+        if abs(vy) > 20 and vy * pvy < 0 and (y <= top + 1 or y >= bottom - 1):
+            if speed > 80:
+                collision_sound.play()
+
+    # ball-ball
+    for i in range(len(balls)):
+        for j in range(i + 1, len(balls)):
+            b1 = balls[i]
+            b2 = balls[j]
+
+            x1, y1 = b1.body.position
+            x2, y2 = b2.body.position
+            dx = x2 - x1
+            dy = y2 - y1
+            dist2 = dx * dx + dy * dy
+            if dist2 <= (2 * radius + 2) ** 2:
+                rvx = b1.body.velocity.x - b2.body.velocity.x
+                rvy = b1.body.velocity.y - b2.body.velocity.y
+                if rvx * rvx + rvy * rvy > 90 * 90:
+                    key = tuple(sorted((id(b1), id(b2))))
+                    if key not in seen_pairs:
+                        collision_sound.play()
+                        seen_pairs.add(key)
+
+    for b in balls:
+        last_vel[b] = b.body.velocity
+
+    # DRAW BALLS
     for i, ball in enumerate(balls):
-        ball.draw(screen, ball_images[i])
+        ball.draw(screen, ball_images[i], shadow_img, highlight_img)
 
-    # check if all balls stopped
+    # POCKET EFFECT RING
+    for eff in pocket_effects[:]:
+        eff["timer"] += 1
+        r = max(0, 20 - eff["timer"] * 2)
+        if r <= 0:
+            pocket_effects.remove(eff)
+        else:
+            x, y = eff["pos"]
+            pygame.draw.circle(screen, (255, 255, 255), (int(x), int(y)), r, 2)
+
+    # SHOT READY CHECK
     taking_shot = all(ball.is_stopped() for ball in balls)
 
-    # cue update + AIM LINE
-    if taking_shot and game_running:
-        if score.lives <= 0:
-            game_running = False
+    if taking_shot and not prev_taking_shot and not ball_in_hand:
+        current_player = 2 if current_player == 1 else 1
+        skin = selected_cue_p1 if current_player == 1 else selected_cue_p2
+        cue_image = pygame.image.load(
+            f"assets/images/cue/{skin}"
+        ).convert_alpha()
+        cue = Cue(cue_image, cue_ball)
 
-        if cue_ball.body.position[0] < 0 or cue_ball.body.position[1] < 0:
-            cue_ball.body.position = cue_ball_start
+    prev_taking_shot = taking_shot
 
+    # GAME OVER CHECK
+    if player_lives[1] <= 0 and winner is None:
+        winner = 2
+        game_over = True
+        for b in balls:
+            b.body.velocity = (0, 0)
+    elif player_lives[2] <= 0 and winner is None:
+        winner = 1
+        game_over = True
+        for b in balls:
+            b.body.velocity = (0, 0)
+
+    # BALL IN HAND
+    if ball_in_hand:
+        mx, my = pygame.mouse.get_pos()
+        if 50 + radius < mx < SCREEN_WIDTH - 50 - radius and 50 + radius < my < SCREEN_HEIGHT - 50 - radius:
+            cue_ball.body.position = (mx, my)
+            cue_ball.body.velocity = (0, 0)
+
+        cx, cy = cue_ball.body.position
+        pygame.draw.circle(screen, (0, 255, 0), (int(cx), int(cy)), int(radius + 3), 2)
+
+    # AIM & CUE
+    if taking_shot and not ball_in_hand:
         mouse = pygame.mouse.get_pos()
         cue.update(mouse)
 
-        # ====== AIM LINE DENGAN PANTULAN 1X ======
         bx, by = cue_ball.body.position
-        angle_rad = math.radians(cue.angle)
+        angle = math.radians(cue.angle)
+        dx = math.cos(angle)
+        dy = -math.sin(angle)
 
-        # arah tembakan harus cocok dengan shoot() implentasi Cue
-        dir_x = math.cos(angle_rad)
-        dir_y = -math.sin(angle_rad)
+        max_len = 900
 
-        # debug/preview short ray (dari bola ke arah tembakan)
-        start = (bx, by)
-        end = (bx + dir_x * 300, by + dir_y * 300)
-        pygame.draw.line(screen, (255,255,255), start, end, 2)
+        # dinding meja
+        candidates = []
+        left = 50
+        right = SCREEN_WIDTH - 50
+        top = 50
+        bottom = SCREEN_HEIGHT - 50
 
-        # panjang ray awal
-        max_len = 800
+        # X hit (cek dy biar aman dari bagi nol)
+        if abs(dx) > 1e-4:
+            if dx < 0:
+                t = (left - bx) / dx
+                if t > 0:
+                    candidates.append(("wall_x", t, left))
+            else:
+                t = (right - bx) / dx
+                if t > 0:
+                    candidates.append(("wall_x", t, right))
 
-        # batas cushion (sama dgn table)
-        left_x = 50
-        right_x = SCREEN_WIDTH - 50
-        top_y = 50
-        bottom_y = SCREEN_HEIGHT - 50
+        # Y hit
+        if abs(dy) > 1e-4:
+            if dy < 0:
+                t = (top - by) / dy
+                if t > 0:
+                    candidates.append(("wall_y", t, top))
+            else:
+                t = (bottom - by) / dy
+                if t > 0:
+                    candidates.append(("wall_y", t, bottom))
 
-        # cari t tabrakan dengan dinding
-        t_candidates = []
-
-        if dir_x < 0:
-            t = (left_x - bx) / dir_x
-            if t > 0:
-                t_candidates.append(("wall_x", t, left_x))
-        elif dir_x > 0:
-            t = (right_x - bx) / dir_x
-            if t > 0:
-                t_candidates.append(("wall_x", t, right_x))
-
-        if dir_y < 0:
-            t = (top_y - by) / dir_y
-            if t > 0:
-                t_candidates.append(("wall_y", t, top_y))
-        elif dir_y > 0:
-            t = (bottom_y - by) / dir_y
-            if t > 0:
-                t_candidates.append(("wall_y", t, bottom_y))
-
-        # t tabrakan dinding paling dekat
         t_wall = max_len
         hit_type = None
-        hit_pos = (bx + dir_x * max_len, by + dir_y * max_len)
+        hit = (bx + dx * max_len, by + dy * max_len)
 
-        for kind, t, val in t_candidates:
+        for kind, t, val in candidates:
             if t < t_wall:
                 t_wall = t
                 if kind == "wall_x":
-                    hit_pos = (val, by + dir_y * t)
+                    hit = (val, by + dy * t)
                 else:
-                    hit_pos = (bx + dir_x * t, val)
+                    hit = (bx + dx * t, val)
                 hit_type = kind
 
-        # cek tabrakan dengan bola lain
+        # bola lain
         t_ball = max_len
-        ball_hit_pos = None
-        for idx, b in enumerate(balls):
+        ball_hit = None
+        for b in balls:
             if b is cue_ball:
                 continue
             cx, cy = b.body.position
-            # proyeksi ke garis
-            rel_x = cx - bx
-            rel_y = cy - by
-            t = rel_x * dir_x + rel_y * dir_y
+            rx = cx - bx
+            ry = cy - by
+            t = rx * dx + ry * dy
             if t <= 0:
                 continue
-            # titik terdekat di garis
-            px = bx + dir_x * t
-            py = by + dir_y * t
+            px = bx + dx * t
+            py = by + dy * t
             dist = math.hypot(cx - px, cy - py)
             if dist <= radius * 2 and t < t_ball:
                 t_ball = t
-                ball_hit_pos = (px, py)
+                ball_hit = (px, py)
 
-        first_end = hit_pos
+        first_hit = hit
         hit_ball_first = False
-        if ball_hit_pos and t_ball < t_wall:
-            first_end = ball_hit_pos
+        if ball_hit and t_ball < t_wall:
+            first_hit = ball_hit
             hit_ball_first = True
 
-        # garis utama (prediksi)
+        # garis utama
         pygame.draw.line(
             screen, (255, 255, 255),
             (int(bx), int(by)),
-            (int(first_end[0]), int(first_end[1])),
+            (int(first_hit[0]), int(first_hit[1])),
             3
         )
 
-        # ghost ball di depan cue ball
-        ghost_x = bx + dir_x * (radius * 2.5)
-        ghost_y = by + dir_y * (radius * 2.5)
+        # ghost ball
+        ghost_x = bx + dx * (radius * 2.3)
+        ghost_y = by + dy * (radius * 2.3)
         pygame.draw.circle(
             screen, (255, 255, 255),
             (int(ghost_x), int(ghost_y)),
-            int(radius), 1
+            int(radius),
+            1
         )
 
-        # garis lanjutan:
+        # garis lanjutan
         if hit_ball_first:
-            # kalau kena bola: garis kecil lanjut searah
-            end2 = (first_end[0] + dir_x * 150, first_end[1] + dir_y * 150)
-            pygame.draw.line(
-                screen, (200, 200, 200),
-                (int(first_end[0]), int(first_end[1])),
-                (int(end2[0]), int(end2[1])),
-                2
-            )
+            end2 = (first_hit[0] + dx * 200, first_hit[1] + dy * 200)
         else:
-            # kalau kena dinding: pantulan
             if hit_type == "wall_x":
-                ref_dir_x = -dir_x
-                ref_dir_y = dir_y
+                rdx, rdy = -dx, dy
             elif hit_type == "wall_y":
-                ref_dir_x = dir_x
-                ref_dir_y = -dir_y
+                rdx, rdy = dx, -dy
             else:
-                ref_dir_x, ref_dir_y = dir_x, dir_y
+                rdx, rdy = dx, dy
+            end2 = (first_hit[0] + rdx * 200, first_hit[1] + rdy * 200)
 
-            end2 = (
-                first_end[0] + ref_dir_x * 200,
-                first_end[1] + ref_dir_y * 200
-            )
-            pygame.draw.line(
-                screen, (200, 200, 200),
-                (int(first_end[0]), int(first_end[1])),
-                (int(end2[0]), int(end2[1])),
-                2
-            )
+        pygame.draw.line(
+            screen, (200, 200, 200),
+            (int(first_hit[0]), int(first_hit[1])),
+            (int(end2[0]), int(end2[1])),
+            2
+        )
 
         cue.draw(screen)
 
-    # power bar charge
-    if powering_up and taking_shot and game_running:
-        force += 100 * force_direction
+    # POWER BAR
+    if powering_up and taking_shot and not ball_in_hand:
+        force += 120 * force_direction
         if force >= max_force or force <= 0:
             force_direction *= -1
 
-        for b in range(math.ceil(force / 2000)):
-            pygame.draw.rect(
-                screen,
-                (255, 0, 0),
-                (
-                    cue_ball.body.position[0] - 30 + b * 15,
-                    cue_ball.body.position[1] + 30,
-                    10, 20
-                ),
-            )
+        bx, by = cue_ball.body.position
+        bar_width = int((force / max_force) * 110)
+        pygame.draw.rect(
+            screen, (255, 0, 0),
+            (int(bx - 55), int(by + 35), bar_width, 10)
+        )
 
-    # NOTE: removed the old automatic shoot branch here.
-    # shooting is now triggered on MOUSEBUTTONUP event (see events below).
-
-    # bottom panel (gambar PALING AKHIR biar nggak ketutup apa pun)
+    # ===== BOTTOM PANEL (STYLE H1) =====
     pygame.draw.rect(
-        screen,
-        (50, 50, 50),
+        screen, (40, 40, 40),
         (0, SCREEN_HEIGHT, SCREEN_WIDTH, BOTTOM_PANEL)
     )
 
-    # SCORE + LIVES
-    ui.draw_text(
-        screen,
-        f"SCORE: {score.score}",
-        font,
-        (255, 255, 255),
-        20,
-        SCREEN_HEIGHT + 10
+    # P1
+    p1_text = f"P1 Score:{player_score[1]} | Lives:{player_lives[1]}"
+    ui.draw_text(screen, p1_text, font, (255, 255, 255), 20, SCREEN_HEIGHT + 5)
+    ui.draw_potted_for_player(screen, score.potted_p1, 20, SCREEN_HEIGHT + 28)
+
+    # P2
+    p2_text = f"P2 Score:{player_score[2]} | Lives:{player_lives[2]}"
+    p2_w = font.render(p2_text, True, (0, 0, 0)).get_width()
+    p2_x = SCREEN_WIDTH - p2_w - 20
+    ui.draw_text(screen, p2_text, font, (255, 255, 255), p2_x, SCREEN_HEIGHT + 5)
+
+    icons_w = len(score.potted_p2) * 26
+    icons_start = SCREEN_WIDTH - icons_w - 20
+    ui.draw_potted_for_player(screen, score.potted_p2, icons_start, SCREEN_HEIGHT + 28)
+
+    # TURN di tengah
+    turn_text = font.render(f"Turn: P{current_player}", True, (255, 255, 0))
+    screen.blit(
+        turn_text,
+        (SCREEN_WIDTH // 2 - turn_text.get_width() // 2, SCREEN_HEIGHT + 10)
     )
 
-    ui.draw_text(
-        screen,
-        f"LIVES: {score.lives}",
-        font,
-        (255, 255, 255),
-        SCREEN_WIDTH - 200,
-        SCREEN_HEIGHT + 10
-    )
-
-    # bola-bola yang sudah masuk
-    ui.draw_potted(screen, score.potted_balls)
-
-    # events
+    # EVENTS
     for event in pygame.event.get():
-        if event.type == pygame.MOUSEBUTTONDOWN and taking_shot and game_running:
-            powering_up = True
-
-        if event.type == pygame.MOUSEBUTTONUP:
-            # only shoot if we were charging and it's valid to take the shot
-            if powering_up and taking_shot and game_running:
-                cue.shoot(force)   # <-- CALL WITHOUT angle param #PERUBAHAN
-                # reset force state
-                force = 0
-                force_direction = 1
-            # always stop charging on mouse up
-            powering_up = False
-
         if event.type == pygame.QUIT:
             run = False
+
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if ball_in_hand:
+                pass
+            elif taking_shot:
+                powering_up = True
+
+        if event.type == pygame.MOUSEBUTTONUP:
+            if ball_in_hand:
+                ball_in_hand = False
+            else:
+                if powering_up and taking_shot:
+                    hit_sound.play()
+                    cue.shoot(force)
+                powering_up = False
+                force = 0
+                force_direction = 1
 
     pygame.display.update()
 
