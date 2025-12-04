@@ -61,6 +61,20 @@ hit_sound.set_volume(0.8)
 collision_sound = pygame.mixer.Sound("assets/sounds/hit.wav")
 collision_sound.set_volume(0.35)
 
+# ===== MUSIC (MENU & WIN) =====
+music_on = True  # status on/off musik menu
+menu_music = pygame.mixer.Sound("assets/sounds/musik.wav")
+menu_music.set_volume(0.5)
+
+win_music = pygame.mixer.Sound("assets/sounds/menang.wav")
+win_music.set_volume(0.8)
+
+menu_music_playing = False
+
+# icon suara di kanan bawah (menu & settings)
+sound_rect = pygame.Rect(SCREEN_WIDTH - 70, SCREEN_HEIGHT - 70, 45, 45)
+
+
 # ===== PREVIEWS =====
 cue_previews = {}
 for name in cue_skins:
@@ -206,6 +220,51 @@ def draw_confetti(screen):
         c["y"] += c["speed"]
         pygame.draw.rect(screen, c["color"], (c["x"], c["y"], c["size"], c["size"]))
     confetti[:] = [c for c in confetti if c["y"] < SCREEN_HEIGHT + 20]
+    
+def draw_sound_icon(screen, rect, on):
+    # kotak dengan border tipis + icon speaker
+    pygame.draw.rect(screen, (30, 30, 30), rect, border_radius=10)
+    pygame.draw.rect(screen, (200, 200, 200), rect, 2, border_radius=10)
+
+    sx = rect.x + 10
+    sy = rect.y + rect.height // 2
+
+    # body speaker
+    pygame.draw.polygon(
+        screen,
+        (230, 230, 230),
+        [(sx, sy - 8), (sx, sy + 8), (sx + 12, sy)]
+    )
+    pygame.draw.rect(screen, (230, 230, 230), (sx + 12, sy - 6, 5, 12))
+
+    if on:
+        # gelombang suara
+        pygame.draw.arc(
+            screen,
+            (230, 230, 230),
+            (rect.x + 26, rect.y + 8, 14, 14),
+            math.radians(-60), math.radians(60), 2
+        )
+        pygame.draw.arc(
+            screen,
+            (230, 230, 230),
+            (rect.x + 30, rect.y + 4, 20, 20),
+            math.radians(-60), math.radians(60), 2
+        )
+    else:
+        # tanda silang merah (mute)
+        pygame.draw.line(
+            screen, (255, 80, 80),
+            (rect.x + 8, rect.y + 8),
+            (rect.x + rect.width - 8, rect.y + rect.height - 8),
+            3
+        )
+        pygame.draw.line(
+            screen, (255, 80, 80),
+            (rect.x + 8, rect.y + rect.height - 8),
+            (rect.x + rect.width - 8, rect.y + 8),
+            3
+        )
 
 def ray_sphere_intersection(ox, oy, dx, dy, cx, cy, R):
     # vektor OC
@@ -239,6 +298,19 @@ run = True
 while run:
     clock.tick(FPS)
 
+    # handle BGM menu (hanya di MENU dan SETTINGS)
+    if state in (STATE_MENU, STATE_SETTINGS):
+        if music_on and not menu_music_playing:
+            menu_music.play(-1)
+            menu_music_playing = True
+        elif not music_on and menu_music_playing:
+            menu_music.stop()
+            menu_music_playing = False
+    else:
+        if menu_music_playing:
+            menu_music.stop()
+            menu_music_playing = False
+
     # ===================== MAIN MENU =====================
     if state == STATE_MENU:
         screen.blit(menu_bg, (0, 0))
@@ -259,13 +331,22 @@ while run:
         draw_modern_button(play_rect, "PLAY", play_rect.collidepoint(mx, my))
         draw_modern_button(set_rect, "SETTINGS", set_rect.collidepoint(mx, my))
         draw_modern_button(quit_rect, "QUIT", quit_rect.collidepoint(mx, my))
+        
+        draw_sound_icon(screen, sound_rect, music_on)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 run = False
 
             if event.type == pygame.MOUSEBUTTONDOWN:
-                if play_rect.collidepoint(mx, my):
+                ex, ey = event.pos
+
+                # klik icon suara
+                if sound_rect.collidepoint(ex, ey):
+                    music_on = not music_on
+
+                # tombol menu
+                elif play_rect.collidepoint(ex, ey):
                     table_image = pygame.image.load(
                         f"assets/images/table/{selected_table}"
                     ).convert_alpha()
@@ -280,10 +361,10 @@ while run:
                     current_player = 1
                     state = STATE_GAME
 
-                elif set_rect.collidepoint(mx, my):
+                elif set_rect.collidepoint(ex, ey):
                     state = STATE_SETTINGS
 
-                elif quit_rect.collidepoint(mx, my):
+                elif quit_rect.collidepoint(ex, ey):
                     run = False
 
         pygame.display.update()
@@ -310,6 +391,7 @@ while run:
         back_rect = pygame.Rect(40, 530, 180, 55)
         mx, my = pygame.mouse.get_pos()
         draw_modern_button(back_rect, "< BACK", back_rect.collidepoint(mx, my))
+        draw_sound_icon(screen, sound_rect, music_on)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -395,6 +477,8 @@ while run:
                 run = False
 
             if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+                # stop lagu menang kalau masih bunyi
+                win_music.stop()
                 # RESET GAME
                 current_player = 1
                 player_score[1] = player_score[2] = 0
@@ -561,11 +645,15 @@ while run:
         game_over = True
         for b in balls:
             b.body.velocity = (0, 0)
+        if music_on:
+            win_music.play()
     elif player_lives[2] <= 0 and winner is None:
         winner = 1
         game_over = True
         for b in balls:
             b.body.velocity = (0, 0)
+        if music_on:
+            win_music.play()
 
     # BALL IN HAND
     if ball_in_hand:
