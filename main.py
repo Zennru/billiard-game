@@ -207,6 +207,32 @@ def draw_confetti(screen):
         pygame.draw.rect(screen, c["color"], (c["x"], c["y"], c["size"], c["size"]))
     confetti[:] = [c for c in confetti if c["y"] < SCREEN_HEIGHT + 20]
 
+def ray_sphere_intersection(ox, oy, dx, dy, cx, cy, R):
+    # vektor OC
+    lx = cx - ox
+    ly = cy - oy
+
+    # proyeksi OC ke arah sinar
+    t_ca = lx * dx + ly * dy
+    if t_ca < 0:
+        return None  # sphere di belakang ray
+
+    # jarak dari center ke garis sinar
+    d2 = (lx*lx + ly*ly) - t_ca*t_ca
+    R2 = R * R
+    if d2 > R2:
+        return None  # tidak mengenai
+
+    # ketebalan chord
+    thc = (R2 - d2) ** 0.5
+
+    # titik intersection pertama (paling dekat)
+    t_hit = t_ca - thc
+    if t_hit < 0:
+        return None
+
+    return t_hit
+
 
 # ============================ MAIN LOOP ==============================
 run = True
@@ -561,17 +587,17 @@ while run:
         dx = math.cos(angle)
         dy = -math.sin(angle)
 
-        max_len = 900
+        max_len = 2000
 
-        # dinding meja
+        # HIT WALL (sudah punya)
         candidates = []
         left = 50
         right = SCREEN_WIDTH - 50
         top = 50
         bottom = SCREEN_HEIGHT - 50
 
-        # X hit (cek dy biar aman dari bagi nol)
-        if abs(dx) > 1e-4:
+        # X WALL
+        if abs(dx) > 1e-6:
             if dx < 0:
                 t = (left - bx) / dx
                 if t > 0:
@@ -581,8 +607,8 @@ while run:
                 if t > 0:
                     candidates.append(("wall_x", t, right))
 
-        # Y hit
-        if abs(dy) > 1e-4:
+        # Y WALL
+        if abs(dy) > 1e-6:
             if dy < 0:
                 t = (top - by) / dy
                 if t > 0:
@@ -593,44 +619,43 @@ while run:
                     candidates.append(("wall_y", t, bottom))
 
         t_wall = max_len
+        hit_wall = None
         hit_type = None
-        hit = (bx + dx * max_len, by + dy * max_len)
 
         for kind, t, val in candidates:
             if t < t_wall:
                 t_wall = t
                 if kind == "wall_x":
-                    hit = (val, by + dy * t)
+                    hit_wall = (val, by + dy * t)
                 else:
-                    hit = (bx + dx * t, val)
+                    hit_wall = (bx + dx * t, val)
                 hit_type = kind
 
-        # bola lain
+        # HIT BALL (RAY-SPHERE INTERSECTION)
+        R = radius * 2
         t_ball = max_len
-        ball_hit = None
+        first_ball = None
+
         for b in balls:
             if b is cue_ball:
                 continue
+
             cx, cy = b.body.position
-            rx = cx - bx
-            ry = cy - by
-            t = rx * dx + ry * dy
-            if t <= 0:
-                continue
-            px = bx + dx * t
-            py = by + dy * t
-            dist = math.hypot(cx - px, cy - py)
-            if dist <= radius * 2 and t < t_ball:
-                t_ball = t
-                ball_hit = (px, py)
 
-        first_hit = hit
-        hit_ball_first = False
-        if ball_hit and t_ball < t_wall:
-            first_hit = ball_hit
+            t_hit = ray_sphere_intersection(bx, by, dx, dy, cx, cy, R)
+            if t_hit is not None and 0 < t_hit < t_ball:
+                t_ball = t_hit
+                first_ball = b
+
+        # FIRST HIT DECISION
+        if first_ball and t_ball < t_wall:
+            first_hit = (bx + dx * t_ball, by + dy * t_ball)
             hit_ball_first = True
+        else:
+            first_hit = hit_wall
+            hit_ball_first = False
 
-        # garis utama
+        # GARIS UTAMA
         pygame.draw.line(
             screen, (255, 255, 255),
             (int(bx), int(by)),
@@ -638,19 +663,116 @@ while run:
             3
         )
 
-        # ghost ball
-        ghost_x = bx + dx * (radius * 2.3)
-        ghost_y = by + dy * (radius * 2.3)
-        pygame.draw.circle(
-            screen, (255, 255, 255),
-            (int(ghost_x), int(ghost_y)),
-            int(radius),
-            1
-        )
+        # GHOST BALL
+        bx, by = cue_ball.body.position
+        radius = cue_ball.radius
 
-        # garis lanjutan
+        # Arah cue → mouse
+        mx, my = pygame.mouse.get_pos()
+        dx = mx - bx
+        dy = my - by
+        dlen = math.hypot(dx, dy)
+
+        if dlen > 1e-6:
+            dx /= dlen
+            dy /= dlen
+
+        # RAYCAST: Cari bola pertama yg kena garis
+        first_hit_ball = None
+        closest_dist = float('inf')
+
+        for ball in balls:
+            if ball is cue_ball:
+                continue
+            
+            px = ball.body.position.x - bx
+            py = ball.body.position.y - by
+
+            proj = px * dx + py * dy
+            if proj <= 0:
+                continue  # di belakang cue ball
+            
+            # jarak center ball ke garis
+            closest = abs(px * dy - py * dx)
+
+            if closest <= radius * 2:  # kena bola
+                if proj < closest_dist:
+                    closest_dist = proj
+                    first_hit_ball = ball
+
+        # Kalau ada bola yg kena garis aim
+        if first_hit_ball:
+            # titik tabrak
+            hx = bx + dx * closest_dist
+            hy = by + dy * closest_dist
+
+            # ghost ball = geser dari titik tabrak sejauh diameter
+            ghost_x = hx - dx * (radius * 2)
+            ghost_y = hy - dy * (radius * 2)
+
+            pygame.draw.circle(
+                screen, (255, 255, 255),
+                (int(ghost_x), int(ghost_y)),
+                radius,
+                2
+            )
+
+        # LANJUTAN — BOLA
+        LINE_LEN = 200
+
         if hit_ball_first:
-            end2 = (first_hit[0] + dx * 200, first_hit[1] + dy * 200)
+
+            cx, cy = first_ball.body.position
+            hx, hy = first_hit
+
+            LINE_GREEN = 80
+            LINE_RED = 40
+
+            # VECTOR NORMAL dari titik kontak
+            nx = cx - hx
+            ny = cy - hy
+            nlen = math.hypot(nx, ny)
+            if nlen < 1e-6:
+                nx, ny = dx, dy
+                nlen = math.hypot(nx, ny)
+            nx /= nlen
+            ny /= nlen
+
+            # lintasan bola target (HIJAU)
+            target_end = (hx + nx * LINE_GREEN, hy + ny * LINE_GREEN)
+
+            pygame.draw.line(
+                screen, (255, 255, 255),
+                (int(hx), int(hy)),
+                (int(target_end[0]), int(target_end[1])),
+                3
+            )
+
+            # cue-ball setelah tumbukan (MERAH)
+            dot = dx * nx + dy * ny
+            projx = dot * nx
+            projy = dot * ny
+            cue_dx = dx - projx
+            cue_dy = dy - projy
+
+            clen = math.hypot(cue_dx, cue_dy)
+            if clen < 1e-6:
+                cue_dx, cue_dy = -ny, nx
+                clen = math.hypot(cue_dx, cue_dy)
+
+            cue_dx /= clen
+            cue_dy /= clen
+
+            cue_end = (hx + cue_dx * LINE_RED, hy + cue_dy * LINE_RED)
+
+            pygame.draw.line(
+                screen, (255, 255, 255),
+                (int(hx), int(hy)),
+                (int(cue_end[0]), int(cue_end[1])),
+                3
+            )
+
+        # LANJUTAN — WALL
         else:
             if hit_type == "wall_x":
                 rdx, rdy = -dx, dy
@@ -658,14 +780,18 @@ while run:
                 rdx, rdy = dx, -dy
             else:
                 rdx, rdy = dx, dy
-            end2 = (first_hit[0] + rdx * 200, first_hit[1] + rdy * 200)
 
-        pygame.draw.line(
-            screen, (200, 200, 200),
-            (int(first_hit[0]), int(first_hit[1])),
-            (int(end2[0]), int(end2[1])),
-            2
-        )
+            end2 = (
+                first_hit[0] + rdx * LINE_LEN,
+                first_hit[1] + rdy * LINE_LEN
+            )
+
+            pygame.draw.line(
+                screen, (200, 200, 200),
+                (int(first_hit[0]), int(first_hit[1])),
+                (int(end2[0]), int(end2[1])),
+                2
+            )
 
         cue.draw(screen)
 
