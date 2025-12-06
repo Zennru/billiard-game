@@ -13,14 +13,14 @@ class AimSystem:
         balls = self.gp.balls
 
         bx, by = cue_ball.body.position
-        # use cue.angle from cue object (updated elsewhere)
         mouse = pygame.mouse.get_pos()
-        # compute direction
+
+        # arah dari cue
         angle = math.radians(self.gp.cue.angle)
         dx = math.cos(angle)
         dy = -math.sin(angle)
 
-        # find wall intersection
+        # cari intersection dengan dinding
         candidates = []
         left = 50
         right = self.g.W - 50
@@ -30,19 +30,23 @@ class AimSystem:
         if abs(dx) > 1e-6:
             if dx < 0:
                 t = (left - bx) / dx
-                if t > 0: candidates.append(("wall_x", t, left))
+                if t > 0:
+                    candidates.append(("wall_x", t, left))
             else:
                 t = (right - bx) / dx
-                if t > 0: candidates.append(("wall_x", t, right))
+                if t > 0:
+                    candidates.append(("wall_x", t, right))
         if abs(dy) > 1e-6:
             if dy < 0:
                 t = (top - by) / dy
-                if t > 0: candidates.append(("wall_y", t, top))
+                if t > 0:
+                    candidates.append(("wall_y", t, top))
             else:
                 t = (bottom - by) / dy
-                if t > 0: candidates.append(("wall_y", t, bottom))
+                if t > 0:
+                    candidates.append(("wall_y", t, bottom))
 
-        t_wall = 2_000
+        t_wall = 2000
         hit_wall = None
         hit_type = None
         for kind, t, val in candidates:
@@ -54,14 +58,17 @@ class AimSystem:
                     hit_wall = (bx + dx * t, val)
                 hit_type = kind
 
-        # find first ball hit via ray-sphere
+        # cari bola pertama yang kena (ray-sphere)
         R = self.gp.cue_ball.radius * 2
-        t_ball = 2_000
+        t_ball = 2000
         first_ball = None
         for b in balls:
-            if b is cue_ball: continue
+            if b is cue_ball:
+                continue
             cx, cy = b.body.position
-            t_hit = self.assets.ray_sphere_intersection(bx, by, dx, dy, cx, cy, R)
+            t_hit = self.assets.ray_sphere_intersection(
+                bx, by, dx, dy, cx, cy, R
+            )
             if t_hit is not None and 0 < t_hit < t_ball:
                 t_ball = t_hit
                 first_ball = b
@@ -74,10 +81,15 @@ class AimSystem:
             hit_ball_first = False
 
         if first_hit:
-            pygame.draw.line(screen, (255,255,255), (int(bx), int(by)), (int(first_hit[0]), int(first_hit[1])), 3)
+            pygame.draw.line(
+                screen,
+                (255, 255, 255),
+                (int(bx), int(by)),
+                (int(first_hit[0]), int(first_hit[1])),
+                3,
+            )
 
-        # ghost ball calculation (simplified from original)
-        # find first hit ball by projection
+        # ghost ball calculation
         dxm = mouse[0] - bx
         dym = mouse[1] - by
         dlen = math.hypot(dxm, dym)
@@ -86,13 +98,15 @@ class AimSystem:
             dym /= dlen
 
         first_hit_ball = None
-        closest_dist = float('inf')
+        closest_dist = float("inf")
         for ball in balls:
-            if ball is cue_ball: continue
+            if ball is cue_ball:
+                continue
             px = ball.body.position.x - bx
             py = ball.body.position.y - by
             proj = px * dxm + py * dym
-            if proj <= 0: continue
+            if proj <= 0:
+                continue
             closest = abs(px * dym - py * dxm)
             if closest <= self.gp.cue_ball.radius * 2:
                 if proj < closest_dist:
@@ -104,9 +118,32 @@ class AimSystem:
             hy = by + dym * closest_dist
             ghost_x = hx - dxm * (self.gp.cue_ball.radius * 2)
             ghost_y = hy - dym * (self.gp.cue_ball.radius * 2)
-            pygame.draw.circle(screen, (255,255,255), (int(ghost_x), int(ghost_y)), int(self.gp.cue_ball.radius * 0.8), 2)
+            pygame.draw.circle(
+                screen,
+                (255, 255, 255),
+                (int(ghost_x), int(ghost_y)),
+                int(self.gp.cue_ball.radius * 0.8),
+                2,
+            )
 
-        # if hit ball first -> draw predicted vectors (simplified)
+        # highlight warna sesuai kelompok
+        if first_ball:
+            ball_type = self.gp.get_ball_type_from_object(first_ball)
+            own = self.gp.player_group[self.gp.current_player]
+            color = (255, 255, 255)
+            if ball_type == "eight":
+                color = (255, 255, 0)  # kuning
+            elif own is not None:
+                if ball_type == own:
+                    color = (0, 255, 0)  # hijau = bola sendiri
+                elif ball_type in ("solid", "stripe"):
+                    color = (255, 80, 80)  # merah = bola lawan
+            cx, cy = first_ball.body.position
+            pygame.draw.circle(
+                screen, color, (int(cx), int(cy)), int(self.gp.assets.radius + 3), 2
+            )
+
+        # predicted after-hit
         if hit_ball_first and first_ball:
             cx, cy = first_ball.body.position
             hx, hy = first_hit
@@ -116,9 +153,16 @@ class AimSystem:
             if nlen < 1e-6:
                 nx, ny = dx, dy
                 nlen = math.hypot(nx, ny)
-            nx /= nlen; ny /= nlen
+            nx /= nlen
+            ny /= nlen
             target_end = (hx + nx * 80, hy + ny * 80)
-            pygame.draw.line(screen, (255,255,255), (int(hx), int(hy)), (int(target_end[0]), int(target_end[1])), 3)
+            pygame.draw.line(
+                screen,
+                (255, 255, 255),
+                (int(hx), int(hy)),
+                (int(target_end[0]), int(target_end[1])),
+                3,
+            )
 
             dot = dx * nx + dy * ny
             projx = dot * nx
@@ -129,11 +173,17 @@ class AimSystem:
             if clen < 1e-6:
                 cue_dx, cue_dy = -ny, nx
                 clen = math.hypot(cue_dx, cue_dy)
-            cue_dx /= clen; cue_dy /= clen
+            cue_dx /= clen
+            cue_dy /= clen
             cue_end = (hx + cue_dx * 40, hy + cue_dy * 40)
-            pygame.draw.line(screen, (255,255,255), (int(hx), int(hy)), (int(cue_end[0]), int(cue_end[1])), 3)
+            pygame.draw.line(
+                screen,
+                (255, 255, 255),
+                (int(hx), int(hy)),
+                (int(cue_end[0]), int(cue_end[1])),
+                3,
+            )
         else:
-            # wall reflection
             if hit_type == "wall_x":
                 rdx, rdy = -dx, dy
             elif hit_type == "wall_y":
@@ -142,4 +192,10 @@ class AimSystem:
                 rdx, rdy = dx, dy
             if first_hit:
                 end2 = (first_hit[0] + rdx * 200, first_hit[1] + rdy * 200)
-                pygame.draw.line(screen, (200,200,200), (int(first_hit[0]), int(first_hit[1])), (int(end2[0]), int(end2[1])), 2)
+                pygame.draw.line(
+                    screen,
+                    (200, 200, 200),
+                    (int(first_hit[0]), int(first_hit[1])),
+                    (int(end2[0]), int(end2[1])),
+                    2,
+                )
