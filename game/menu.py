@@ -1,5 +1,6 @@
 import pygame
 from .state import STATE_SETTINGS, STATE_GAME
+from .gameplay import Gameplay
 
 class Menu:
     def __init__(self, game):
@@ -50,6 +51,10 @@ class Menu:
                 elif play_rect.collidepoint(ex, ey):
                     self.assets.stop_menu_music()
                     self.assets.load_table_image()
+
+                    # RESET GAMEPLAY supaya cue player 1 pakai skin terbaru
+                    self.g.gameplay = Gameplay(self.g)
+
                     self.g.state = STATE_GAME
 
                 elif set_rect.collidepoint(ex, ey):

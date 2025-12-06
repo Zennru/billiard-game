@@ -135,6 +135,8 @@ class Gameplay:
                 if event.type == pygame.QUIT:
                     self.g.running = False
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+                    if self.assets.win_music:
+                        self.assets.win_music.stop()
                     # reset game (simple full reset by reinitializing object)
                     self.__init__(self.g)
             pygame.display.update()

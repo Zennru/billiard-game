@@ -104,7 +104,7 @@ class AimSystem:
             hy = by + dym * closest_dist
             ghost_x = hx - dxm * (self.gp.cue_ball.radius * 2)
             ghost_y = hy - dym * (self.gp.cue_ball.radius * 2)
-            pygame.draw.circle(screen, (255,255,255), (int(ghost_x), int(ghost_y)), int(self.gp.cue_ball.radius), 2)
+            pygame.draw.circle(screen, (255,255,255), (int(ghost_x), int(ghost_y)), int(self.gp.cue_ball.radius * 0.8), 2)
 
         # if hit ball first -> draw predicted vectors (simplified)
         if hit_ball_first and first_ball:
