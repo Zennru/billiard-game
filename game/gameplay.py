@@ -1,6 +1,7 @@
 import pygame
 import pymunk
 import math
+
 from ball import Ball
 from cue import Cue
 from table import Table
@@ -35,20 +36,23 @@ class Gameplay:
 
         # balls
         self.balls = []
-        self.ball_images = list(self.assets.ball_images)  # clone
+        self.ball_images = list(self.assets.ball_images)  # clone gambar
         self.shadow = self.assets.shadow_img
         self.highlight = self.assets.highlight_img
 
-        # build rack
+        # mapping Ball -> tipe ("solid", "stripe", "eight", atau None)
+        self.ball_type = {}
+
+        # build rack 15 bola object
         self._build_rack()
 
         # cue ball
         self.cue_ball_start = (self.g.W * 0.75, self.g.H / 2)
         self.cue_ball = Ball(self.space, self.assets.radius, self.cue_ball_start)
         self.balls.append(self.cue_ball)
+        self.ball_type[self.cue_ball] = None  # cue ball tidak punya tipe kelompok
 
         # cue
-        cue_image = None
         try:
             skin = self.assets.selected_cue_p1
             cue_image = pygame.image.load(
@@ -61,7 +65,7 @@ class Gameplay:
         # player state
         self.current_player = 1
         self.player_score = {1: 0, 2: 0}
-        self.player_lives = {1: 3, 2: 3}
+        self.player_lives = {1: 3, 2: 3}  # masih dipakai sebagai nyawa scratch
 
         self.powering_up = False
         self.force = 0
@@ -72,33 +76,31 @@ class Gameplay:
         self.taking_shot = True
         self.prev_taking_shot = True
 
-        self.pocket_effects = []
-
         self.game_over = False
         self.winner = None
 
         # 8-ball rules state
         self.groups_assigned = False
-        self.player_group = {1: None, 2: None}  # "solid" / "stripe"
+        self.player_group = {1: None, 2: None}  # "solid"/"stripe"
         self.remaining = {"solid": 7, "stripe": 7, "eight": 1}
         self.is_break_shot = True
 
         # per-shot state
         self.shot_active = False
-        self.shot_potted_types = []
+        self.shot_potted_types = []  # list tipe bola yg masuk di shot ini
         self.first_hit_ball = None
         self.first_hit_type = None
         self.scratch_this_shot = False
         self.foul_committed = False
         self.foul_type = None
 
-        # simple shot timer (20 detik per turn)
+        # simple turn timer
         self.turn_time_seconds = 20
         self.turn_timer = self.g.FPS * self.turn_time_seconds
 
         # foul popup
         self.foul_message = ""
-        self.foul_timer = 0  # dalam frame
+        self.foul_timer = 0
 
         # aim helper
         self.aim = AimSystem(self)
@@ -110,6 +112,7 @@ class Gameplay:
         dia = self.assets.dia
         start_x = self.g.W * 0.25
         start_y = self.g.H * 0.40
+
         for col in range(5):
             for r in range(rows):
                 pos = (
@@ -118,6 +121,19 @@ class Gameplay:
                 )
                 b = Ball(self.space, self.assets.radius, pos)
                 self.balls.append(b)
+
+                # nomor bola berdasarkan urutan masuk ke list (1..15)
+                num = len(self.balls)
+                if num == 8:
+                    t = "eight"
+                elif 1 <= num <= 7:
+                    t = "solid"
+                elif 9 <= num <= 15:
+                    t = "stripe"
+                else:
+                    t = None
+                self.ball_type[b] = t
+
             rows -= 1
 
     def get_ball_points(self, index: int) -> int:
@@ -130,28 +146,18 @@ class Gameplay:
             return 25
 
     def get_ball_type(self, index: int):
-        """Klasifikasi bola berdasarkan nomor gambar (1–15)."""
-        num = index + 1
-        if num == 8:
-            return "eight"
-        elif 1 <= num <= 7:
-            return "solid"
-        elif 9 <= num <= 15:
-            return "stripe"
-        else:
-            return None
+        """Jika perlu dari index, ambil via object."""
+        if 0 <= index < len(self.balls):
+            ball = self.balls[index]
+            return self.ball_type.get(ball)
+        return None
 
     def get_ball_type_from_object(self, ball):
-        """Cari tipe bola dari object Ball (dipakai AimSystem)."""
-        if ball not in self.balls:
-            return None
-        idx = self.balls.index(ball)
-        if idx >= len(self.ball_images):
-            return None
-        return self.get_ball_type(idx)
+        """Dipakai AimSystem untuk tahu solid/stripe/eight."""
+        return self.ball_type.get(ball)
 
     def _start_shot(self):
-        """Dipanggil saat player melepas mouse (mulai tembakan)."""
+        """Dipanggil saat cue ditembak (mouse up)."""
         self.shot_active = True
         self.shot_potted_types = []
         self.first_hit_ball = None
@@ -159,12 +165,9 @@ class Gameplay:
         self.scratch_this_shot = False
         self.foul_committed = False
         self.foul_type = None
-        # reset timer untuk turn berikutnya, nanti di-set ulang di akhir shot
-        # (timer hanya berjalan saat menunggu tembakan)
-        # is_break_shot tetap dikelola di _resolve_shot
 
     def _update_first_hit(self):
-        """Deteksi bola pertama yang terkena cue ball pada shot ini."""
+        """Deteksi bola pertama yg disentuh cue ball di shot ini."""
         if not self.shot_active or self.first_hit_ball is not None:
             return
 
@@ -183,21 +186,21 @@ class Gameplay:
                 self.first_hit_type = self.get_ball_type_from_object(b)
                 break
 
-    def _mark_foul(self, msg):
+    def _mark_foul(self, msg: str):
         self.foul_committed = True
         self.foul_type = msg
         self.foul_message = "Foul: " + msg
-        self.foul_timer = int(self.g.FPS * 2.0)  # popup ~2 detik
+        self.foul_timer = int(self.g.FPS * 2)  # popup ~2 detik
 
     def _resolve_groups_if_needed(self):
-        """Penentuan kelompok (solid/stripe) setelah shot (bukan break)."""
+        """Menentukan kelompok (solid/stripe) jika meja masih open."""
         if self.groups_assigned:
             return
         if self.is_break_shot:
-            # saat break, kelompok belum ditentukan walau ada bola masuk
+            # saat break, belum menentukan kelompok walau ada bola masuk
             return
         if self.foul_committed:
-            # kalau shot foul, meja tetap "open"
+            # foul -> meja tetap open
             return
 
         solids = [t for t in self.shot_potted_types if t == "solid"]
@@ -205,7 +208,7 @@ class Gameplay:
         if not solids and not stripes:
             return
 
-        # ada pot bola tipe kelompok
+        # kalau dua jenis, pakai jenis terakhir yang masuk
         last_type = None
         for t in self.shot_potted_types:
             if t in ("solid", "stripe"):
@@ -219,40 +222,46 @@ class Gameplay:
         elif stripes and not solids:
             chosen = "stripe"
         else:
-            # dua jenis bola, pakai yang terakhir masuk (rules kamu)
             chosen = last_type
 
         self.player_group[self.current_player] = chosen
-        self.player_group[2 if self.current_player == 1 else 1] = (
-            "solid" if chosen == "stripe" else "stripe"
-        )
+        other = 2 if self.current_player == 1 else 1
+        self.player_group[other] = "solid" if chosen == "stripe" else "stripe"
         self.groups_assigned = True
 
     def _resolve_eight_ball_outcome(self):
-        """Cek apakah bola 8 membuat menang / kalah."""
-        own = self.player_group[self.current_player]
-        opp = 2 if self.current_player == 1 else 1
+        """Cek apakah bola 8 bikin menang/kalah."""
+        shooter = self.current_player
+        opponent = 2 if shooter == 1 else 1
+        own = self.player_group[shooter]
 
         potted_eight = self.shot_potted_types.count("eight")
         if potted_eight == 0:
-            return  # tidak ada bola 8 masuk
+            return
 
-        # masih ada bola kelompok? -> kalah
+        # kalau kelompok belum ditentukan sama sekali -> kalah
+        if not self.groups_assigned:
+            self.winner = opponent
+            self.game_over = True
+            self._finish_game()
+            return
+
+        # masih ada bola kelompok sendiri -> kalah
         if own is not None and self.remaining[own] > 0:
-            self.winner = opp
+            self.winner = opponent
             self.game_over = True
             self._finish_game()
             return
 
-        # jika ada foul + bola 8 -> kalah
+        # shot ini foul + bola 8 masuk -> kalah
         if self.foul_committed:
-            self.winner = opp
+            self.winner = opponent
             self.game_over = True
             self._finish_game()
             return
 
-        # bola 8 legal -> menang
-        self.winner = self.current_player
+        # selain itu -> bola 8 legal, shooter menang
+        self.winner = shooter
         self.game_over = True
         self._finish_game()
 
@@ -263,7 +272,7 @@ class Gameplay:
             self.assets.win_music.play()
 
     def _resolve_shot(self):
-        """Dipanggil sekali saat semua bola berhenti setelah sebuah shot."""
+        """Dipanggil ketika semua bola sudah berhenti setelah sebuah shot."""
         if not self.shot_active:
             return
 
@@ -273,24 +282,23 @@ class Gameplay:
         opp_group = self.player_group[opponent]
 
         # ---------- FOUL CHECK ----------
-        # 1. scratch (cue ball masuk)
+        # 1. scratch
         if self.scratch_this_shot:
             self._mark_foul("Scratch")
 
-        # 2. no contact (cue ball tidak kena bola apa pun)
+        # 2. no contact
         if self.first_hit_ball is None:
             self._mark_foul("No Contact")
 
-        # 3. wrong ball first (setelah kelompok ditentukan)
-        if (
-            self.groups_assigned
-            and self.first_hit_type is not None
-            and own_group is not None
-        ):
+        # 3. wrong ball first / kena 8 duluan
+        if self.groups_assigned and own_group is not None:
             if self.first_hit_type == "eight":
-                # jika masih ada bola kelompok, nanti dihukum di _resolve_eight_ball_outcome
-                pass
-            elif self.first_hit_type != own_group:
+                if self.remaining[own_group] > 0:
+                    self._mark_foul("Hit 8 Ball Early")
+            elif (
+                self.first_hit_type is not None
+                and self.first_hit_type != own_group
+            ):
                 self._mark_foul("Wrong Ball First")
 
         # ---------- EIGHT BALL OUTCOME ----------
@@ -299,7 +307,7 @@ class Gameplay:
             self.shot_active = False
             return
 
-        # ---------- GROUP ASSIGNMENT (open table) ----------
+        # ---------- GROUP ASSIGNMENT ----------
         self._resolve_groups_if_needed()
 
         # ---------- TURN DECISION ----------
@@ -319,13 +327,13 @@ class Gameplay:
             self.current_player = opponent
         else:
             if self.is_break_shot:
-                # break: kalau ada bola masuk -> lanjut turn, kelompok belum ditentukan
+                # saat break: kalau ada bola masuk → lanjut turn
                 continue_turn = potted_any
             elif not self.groups_assigned:
-                # meja masih open (belum ada kelompok)
+                # meja masih open
                 continue_turn = potted_any
             else:
-                # kelompok sudah ditentukan
+                # kelompok sudah fix
                 if potted_own > 0:
                     continue_turn = True
                 elif potted_opp > 0 and potted_own == 0:
@@ -338,11 +346,11 @@ class Gameplay:
             if not continue_turn:
                 self.current_player = opponent
 
-        # break hanya untuk shot pertama saja
+        # break hanya sekali di awal
         if self.is_break_shot:
             self.is_break_shot = False
 
-        # siapkan cue skin untuk player yang akan bermain
+        # update cue skin pemain yg akan main
         skin = (
             self.assets.selected_cue_p1
             if self.current_player == 1
@@ -356,14 +364,14 @@ class Gameplay:
             cue_img = self.cue.original
         self.cue = Cue(cue_img, self.cue_ball)
 
-        # reset shot state & timer turn baru
+        # reset shot dan timer turn baru
         self.shot_active = False
         self.turn_timer = self.g.FPS * self.turn_time_seconds
 
-    # ===================== MAIN UPDATE =====================
+    # ===================== MAIN UPDATE LOOP =====================
 
     def update(self):
-        # handle menu music status (assets)
+        # pastikan musik menu berhenti ketika di game
         if self.g.state == 2:
             if (
                 self.assets.menu_music
@@ -371,11 +379,11 @@ class Gameplay:
             ):
                 self.assets.menu_music.stop()
 
-        # physics step
+        # step physics
         self.space.step(1 / self.g.FPS)
         self.screen.blit(self.assets.table_image, (0, 0))
 
-        # game over mode
+        # ========== GAME OVER MODE ==========
         if self.game_over:
             overlay = pygame.Surface((self.g.W, self.g.H), pygame.SRCALPHA)
             overlay.fill((0, 0, 0, 180))
@@ -411,7 +419,7 @@ class Gameplay:
                 ),
             )
 
-            # confetti and restart text
+            # confetti dan tulisan restart
             self.effects.update_and_draw(self.screen, game_over=True)
             alpha = min(255, int((pygame.time.get_ticks() * 0.25) % 255))
             restart_text = self.assets.font.render(
@@ -436,14 +444,12 @@ class Gameplay:
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
                     if self.assets.win_music:
                         self.assets.win_music.stop()
-                    # reset game (simple full reset by reinitializing object)
                     self.__init__(self.g)
+
             pygame.display.update()
             return
 
-        # ====== SHOT TIMER (berjalan saat nunggu tembakan) ======
-        # timer berkurang hanya ketika semua bola diam, tidak ball-in-hand, dan belum mulai shot
-        # kalau habis -> foul (timeout)
+        # ========== TURN TIMER ==========
         taking_shot_now = all(ball.is_stopped() for ball in self.balls)
         if (
             taking_shot_now
@@ -453,15 +459,15 @@ class Gameplay:
             if self.turn_timer > 0:
                 self.turn_timer -= 1
             else:
-                # timeout -> foul + ball in hand untuk lawan
+                # timeout → foul & langsung resolve shot ala miss
                 self._mark_foul("Time Out")
-                self._resolve_shot()  # treat as shot selesai tanpa gerakan
+                self._resolve_shot()
                 taking_shot_now = all(ball.is_stopped() for ball in self.balls)
 
-        # update first-hit detector selama shot aktif
+        # update first-hit detector
         self._update_first_hit()
 
-        # pocket check
+        # ========== POCKET CHECK ==========
         potted_info = []
         for ball in self.balls[:]:
             pos = ball.body.position
@@ -490,28 +496,35 @@ class Gameplay:
                 ball.body.velocity = (0, 0)
                 ball.body.position = (-200, -200)
 
-        # process potted
+        # proses bola yg masuk
         for info in sorted(potted_info, key=lambda x: x["index"], reverse=True):
             b = info["ball"]
             idx = info["index"]
+
             self.score.add_potted(info["image"], self.current_player)
             self.player_score[self.current_player] += info["points"]
 
-            ball_type = self.get_ball_type(idx)
-            if ball_type in self.remaining:
-                self.remaining[ball_type] -= 1
+            # tipe diambil dari object, bukan index
+            btype = self.ball_type.get(b)
+            if btype in self.remaining:
+                self.remaining[btype] -= 1
                 if self.shot_active:
-                    self.shot_potted_types.append(ball_type)
+                    self.shot_potted_types.append(btype)
 
+            # hapus dari mapping & world
+            if b in self.ball_type:
+                del self.ball_type[b]
             if b in self.collision.last_vel:
                 del self.collision.last_vel[b]
+
             self.space.remove(b.body, b.shape)
             self.balls.pop(idx)
             if idx < len(self.ball_images):
                 self.ball_images.pop(idx)
+
             self.effects.add_pocket_effect(info["pos"])
 
-        # collision checks
+        # collision sound / logic
         self.collision.check()
 
         # draw balls
@@ -519,19 +532,17 @@ class Gameplay:
             img = self.ball_images[i] if i < len(self.ball_images) else None
             ball.draw(self.screen, img, self.shadow, self.highlight)
 
-        # draw pocket effect rings & confetti if any
+        # efek pocket ring + confetti (kalau game_over False, hanya lingkaran)
         self.effects.update_and_draw(self.screen)
 
         # shot ready check & resolve turn
         taking_shot = taking_shot_now
         if taking_shot and not self.prev_taking_shot:
-            # semua bola baru saja berhenti -> akhir sebuah shot
             self._resolve_shot()
         self.prev_taking_shot = taking_shot
         self.taking_shot = taking_shot
 
-        # game over check via lives (tetap dipertahankan,
-        # tapi sebenarnya 8-ball sudah ditangani di _resolve_eight_ball_outcome)
+        # backup: game over kalau nyawa habis
         if self.player_lives[1] <= 0 and self.winner is None:
             self.winner = 2
             self.game_over = True
@@ -563,16 +574,14 @@ class Gameplay:
                 2,
             )
 
-        # aim & cue (only when ready and not ball in hand)
+        # aim & cue (hanya kalau siap dan tidak ball in hand)
         if taking_shot and not self.ball_in_hand:
             mouse = pygame.mouse.get_pos()
             self.cue.update(mouse)
-
-            # draw aim lines and ghost ball via AimSystem
             self.aim.draw()
             self.cue.draw(self.screen)
 
-        # power bar logic
+        # power bar
         if self.powering_up and taking_shot and not self.ball_in_hand:
             self.force += 120 * self.force_direction
             if self.force >= self.max_force or self.force <= 0:
@@ -585,12 +594,14 @@ class Gameplay:
                 (int(bx - 55), int(by + 35), bar_width, 10),
             )
 
-        # bottom panel draw
+        # bottom panel
         pygame.draw.rect(
             self.screen,
             (40, 40, 40),
             (0, self.g.H, self.g.W, self.g.BOTTOM),
         )
+
+        # P1
         p1_text = f"P1 Score:{self.player_score[1]} | Lives:{self.player_lives[1]}"
         self.ui.draw_text(
             self.screen,
@@ -604,6 +615,7 @@ class Gameplay:
             self.screen, self.score.potted_p1, 20, self.g.H + 28
         )
 
+        # P2
         p2_text = f"P2 Score:{self.player_score[2]} | Lives:{self.player_lives[2]}"
         p2_w = self.assets.font.render(p2_text, True, (0, 0, 0)).get_width()
         p2_x = self.g.W - p2_w - 20
@@ -621,7 +633,7 @@ class Gameplay:
             self.screen, self.score.potted_p2, icons_start, self.g.H + 28
         )
 
-        # turn label + group info + timer
+        # turn & group display
         group_p1 = self.player_group[1] or "-"
         group_p2 = self.player_group[2] or "-"
         turn_text = self.assets.font.render(
@@ -635,7 +647,6 @@ class Gameplay:
             ),
         )
 
-        # group label kecil di bawah
         g1 = self.assets.font.render(f"P1: {group_p1}", True, (200, 200, 200))
         g2 = self.assets.font.render(f"P2: {group_p2}", True, (200, 200, 200))
         self.screen.blit(g1, (20, self.g.H - 20))
@@ -654,7 +665,7 @@ class Gameplay:
             ),
         )
 
-        # foul popup (di atas meja)
+        # foul popup
         if self.foul_timer > 0 and self.foul_message:
             self.foul_timer -= 1
             msg_img = self.assets.large_font.render(
@@ -689,7 +700,6 @@ class Gameplay:
 
             if event.type == pygame.MOUSEBUTTONUP:
                 if self.ball_in_hand:
-                    # ball in hand selesai, shot belum dimulai
                     self.ball_in_hand = False
                     self.turn_timer = self.g.FPS * self.turn_time_seconds
                 else:
