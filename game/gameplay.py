@@ -72,6 +72,9 @@ class Gameplay:
         self.max_force = 10000
         self.force_direction = 1
         self.ball_in_hand = False
+        # saat baru mulai game, beri kesempatan Player 1 menempatkan cue ball
+        # sebelum break; dibatasi agar tidak melewati garis tengah meja
+        self.placing_cue_initial = True
 
         self.taking_shot = True
         self.prev_taking_shot = True
@@ -553,7 +556,32 @@ class Gameplay:
             self._finish_game()
 
         # ball in hand handling
-        if self.ball_in_hand:
+        # initial cue placement (Player 1 at game start)
+        if self.placing_cue_initial and self.current_player == 1 and self.is_break_shot:
+            mx, my = pygame.mouse.get_pos()
+            min_x = int(self.g.W // 1.4 + self.assets.radius + 1)
+            max_x = int(self.g.W - 50 - self.assets.radius)
+            min_y = int(50 + self.assets.radius)
+            max_y = int(self.g.H - 50 - self.assets.radius)
+            px = max(min_x, min(mx, max_x))
+            py = max(min_y, min(my, max_y))
+            self.cue_ball.body.position = (px, py)
+            self.cue_ball.body.velocity = (0, 0)
+            cx, cy = self.cue_ball.body.position
+            # outline to show placement
+            pygame.draw.circle(
+                self.screen,
+                (0, 200, 0),
+                (int(cx), int(cy)),
+                int(self.assets.radius + 4),
+                2,
+            )
+            # instruction text
+            instr = self.assets.font.render(
+                "Place cue ball (Player 1) - Click to confirm", True, (255, 255, 255)
+            )
+            self.screen.blit(instr, (20, 20))
+        elif self.ball_in_hand:
             mx, my = pygame.mouse.get_pos()
             if (
                 50 + self.assets.radius
@@ -574,8 +602,8 @@ class Gameplay:
                 2,
             )
 
-        # aim & cue (hanya kalau siap dan tidak ball in hand)
-        if taking_shot and not self.ball_in_hand:
+        # aim & cue (hanya kalau siap dan tidak ball in hand dan bukan sedang menempatkan awal)
+        if taking_shot and not self.ball_in_hand and not getattr(self, 'placing_cue_initial', False):
             mouse = pygame.mouse.get_pos()
             self.cue.update(mouse)
             self.aim.draw()
@@ -693,7 +721,11 @@ class Gameplay:
                 self.g.running = False
 
             if event.type == pygame.MOUSEBUTTONDOWN:
-                if self.ball_in_hand:
+                if getattr(self, 'placing_cue_initial', False):
+                    # klik untuk mengunci posisi dan lanjut permainan
+                    self.placing_cue_initial = False
+                    self.turn_timer = self.g.FPS * self.turn_time_seconds
+                elif self.ball_in_hand:
                     pass
                 elif self.taking_shot:
                     self.powering_up = True
