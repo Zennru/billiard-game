@@ -462,9 +462,30 @@ class Gameplay:
             if self.turn_timer > 0:
                 self.turn_timer -= 1
             else:
-                # timeout → foul & langsung resolve shot ala miss
+                # timeout → foul: berikan ball-in-hand ke lawan dan ganti giliran
                 self._mark_foul("Time Out")
-                self._resolve_shot()
+                opponent = 2 if self.current_player == 1 else 1
+                # foul memberi ball-in-hand ke lawan
+                self.ball_in_hand = True
+                self.current_player = opponent
+
+                # update skin cue pemain yang baru
+                skin = (
+                    self.assets.selected_cue_p1
+                    if self.current_player == 1
+                    else self.assets.selected_cue_p2
+                )
+                try:
+                    cue_img = pygame.image.load(
+                        f"assets/images/cue/{skin}"
+                    ).convert_alpha()
+                except:
+                    cue_img = self.cue.original
+                self.cue = Cue(cue_img, self.cue_ball)
+
+                # reset turn timer dan flags terkait
+                self.turn_timer = self.g.FPS * self.turn_time_seconds
+                self.shot_active = False
                 taking_shot_now = all(ball.is_stopped() for ball in self.balls)
 
         # update first-hit detector
