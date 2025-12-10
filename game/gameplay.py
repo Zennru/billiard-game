@@ -146,7 +146,7 @@ class Gameplay:
         elif num <= 7:
             return 20
         else:
-            return 25
+            return 20
 
     def get_ball_type(self, index: int):
         """Jika perlu dari index, ambil via object."""
