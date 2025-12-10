@@ -525,8 +525,25 @@ class Gameplay:
             b = info["ball"]
             idx = info["index"]
 
-            self.score.add_potted(info["image"], self.current_player)
-            self.player_score[self.current_player] += info["points"]
+                        # --- cek apakah bola potted milik sendiri atau lawan ---
+            btype = self.ball_type.get(b)
+            shooter = self.current_player
+            opponent = 2 if shooter == 1 else 1
+
+            # tentukan pemilik poin & ikon
+            if self.groups_assigned and btype in ("solid", "stripe"):
+                # kalau bola itu kelompok lawan → kredit ke lawan
+                if btype == self.player_group[opponent]:
+                    receiver = opponent
+                else:
+                    receiver = shooter
+            else:
+                # meja masih open → tetap diberikan ke player yg masukin
+                receiver = shooter
+
+            # tambahkan ikon & poin sesuai receiver
+            self.score.add_potted(info["image"], receiver)
+            self.player_score[receiver] += info["points"]
 
             # tipe diambil dari object, bukan index
             btype = self.ball_type.get(b)
