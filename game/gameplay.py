@@ -281,8 +281,6 @@ class Gameplay:
 
         shooter = self.current_player
         opponent = 2 if shooter == 1 else 1
-        own_group = self.player_group[shooter]
-        opp_group = self.player_group[opponent]
 
         # ---------- FOUL CHECK ----------
         # 1. scratch
@@ -294,15 +292,17 @@ class Gameplay:
             self._mark_foul("No Contact")
 
         # 3. wrong ball first / kena 8 duluan
-        if self.groups_assigned and own_group is not None:
-            if self.first_hit_type == "eight":
-                if self.remaining[own_group] > 0:
-                    self._mark_foul("Hit 8 Ball Early")
-            elif (
-                self.first_hit_type is not None
-                and self.first_hit_type != own_group
-            ):
-                self._mark_foul("Wrong Ball First")
+        if self.groups_assigned:
+            cur_own_group = self.player_group[shooter]
+            if cur_own_group is not None:
+                if self.first_hit_type == "eight":
+                    if self.remaining[cur_own_group] > 0:
+                        self._mark_foul("Hit 8 Ball Early")
+                elif (
+                    self.first_hit_type is not None
+                    and self.first_hit_type != cur_own_group
+                ):
+                    self._mark_foul("Wrong Ball First")
 
         # ---------- EIGHT BALL OUTCOME ----------
         self._resolve_eight_ball_outcome()
@@ -314,6 +314,10 @@ class Gameplay:
         self._resolve_groups_if_needed()
 
         # ---------- TURN DECISION ----------
+        # recompute groups because they may have been assigned during this shot
+        own_group = self.player_group[shooter]
+        opp_group = self.player_group[opponent]
+
         potted_own = (
             self.shot_potted_types.count(own_group) if own_group else 0
         )
@@ -525,25 +529,8 @@ class Gameplay:
             b = info["ball"]
             idx = info["index"]
 
-                        # --- cek apakah bola potted milik sendiri atau lawan ---
-            btype = self.ball_type.get(b)
-            shooter = self.current_player
-            opponent = 2 if shooter == 1 else 1
-
-            # tentukan pemilik poin & ikon
-            if self.groups_assigned and btype in ("solid", "stripe"):
-                # kalau bola itu kelompok lawan → kredit ke lawan
-                if btype == self.player_group[opponent]:
-                    receiver = opponent
-                else:
-                    receiver = shooter
-            else:
-                # meja masih open → tetap diberikan ke player yg masukin
-                receiver = shooter
-
-            # tambahkan ikon & poin sesuai receiver
-            self.score.add_potted(info["image"], receiver)
-            self.player_score[receiver] += info["points"]
+            self.score.add_potted(info["image"], self.current_player)
+            self.player_score[self.current_player] += info["points"]
 
             # tipe diambil dari object, bukan index
             btype = self.ball_type.get(b)
