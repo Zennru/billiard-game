@@ -65,7 +65,7 @@ class Gameplay:
         # player state
         self.current_player = 1
         self.player_score = {1: 0, 2: 0}
-        self.player_lives = {1: 3, 2: 3}  # masih dipakai sebagai nyawa scratch
+        # self.player_lives = {1: 3, 2: 3}
 
         self.powering_up = False
         self.force = 0
@@ -502,7 +502,6 @@ class Gameplay:
             if self.pocket_system.check(pos):
                 if ball is self.cue_ball:
                     if not self.ball_in_hand:
-                        self.player_lives[self.current_player] -= 1
                         self.ball_in_hand = True
                     self.scratch_this_shot = True
                     ball.body.velocity = (0, 0)
@@ -529,11 +528,19 @@ class Gameplay:
             b = info["ball"]
             idx = info["index"]
 
-            self.score.add_potted(info["image"], self.current_player)
-            self.player_score[self.current_player] += info["points"]
+            btype = self.ball_type.get(b)
+
+            if btype == self.player_group[1]:
+                owner = 1
+            elif btype == self.player_group[2]:
+                owner = 2
+            else:
+                owner = self.current_player   # misalnya cue ball masuk atau special case
+
+            self.score.add_potted(info["image"], owner)
+            self.player_score[owner] += info["points"]
 
             # tipe diambil dari object, bukan index
-            btype = self.ball_type.get(b)
             if btype in self.remaining:
                 self.remaining[btype] -= 1
                 if self.shot_active:
@@ -571,14 +578,14 @@ class Gameplay:
         self.taking_shot = taking_shot
 
         # backup: game over kalau nyawa habis
-        if self.player_lives[1] <= 0 and self.winner is None:
-            self.winner = 2
-            self.game_over = True
-            self._finish_game()
-        elif self.player_lives[2] <= 0 and self.winner is None:
-            self.winner = 1
-            self.game_over = True
-            self._finish_game()
+        # if self.player_lives[1] <= 0 and self.winner is None:
+        #     self.winner = 2
+        #     self.game_over = True
+        #     self._finish_game()
+        # elif self.player_lives[2] <= 0 and self.winner is None:
+        #     self.winner = 1
+        #     self.game_over = True
+        #     self._finish_game()
 
         # ball in hand handling
         # initial cue placement (Player 1 at game start)
@@ -655,7 +662,7 @@ class Gameplay:
         )
 
         # P1
-        p1_text = f"P1 Score:{self.player_score[1]} | Lives:{self.player_lives[1]}"
+        p1_text = f"P1 Score:{self.player_score[1]}"
         self.ui.draw_text(
             self.screen,
             p1_text,
@@ -669,7 +676,7 @@ class Gameplay:
         )
 
         # P2
-        p2_text = f"P2 Score:{self.player_score[2]} | Lives:{self.player_lives[2]}"
+        p2_text = f"P2 Score:{self.player_score[2]}"
         p2_w = self.assets.font.render(p2_text, True, (0, 0, 0)).get_width()
         p2_x = self.g.W - p2_w - 20
         self.ui.draw_text(
